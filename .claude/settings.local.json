@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create *)",
+      "Bash(where node *)",
+      "Bash(where npm *)",
+      "Read(//c/Program Files/**)",
+      "PowerShell(Get-Command node, npm -ErrorAction SilentlyContinue)"
+    ]
+  }
+}

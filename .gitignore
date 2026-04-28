@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.db
+backend/.env
+
+# Node
+node_modules/
+frontend/dist/
+electron/dist/
+electron/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+.env.local
