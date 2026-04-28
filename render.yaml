@@ -35,11 +35,7 @@ services:
     plan: free
     envVars:
       - key: VITE_API_URL
-        fromService:
-          name: restaurante-backend
-          type: web
-          property: host
-          envVarKey: RENDER_EXTERNAL_URL
+        value: https://restaurante-backend.onrender.com
     routes:
       - type: rewrite
         source: /*
