@@ -9,6 +9,7 @@ services:
     name: restaurante-backend
     runtime: python
     rootDir: backend
+    plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
@@ -25,9 +26,8 @@ services:
       - key: PYTHON_VERSION
         value: 3.12.0
 
-  - type: web
+  - type: static
     name: restaurante-frontend
-    runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
