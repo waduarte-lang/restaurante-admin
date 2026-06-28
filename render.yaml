@@ -25,3 +25,9 @@ services:
         value: 480
       - key: PYTHON_VERSION
         value: 3.12.0
+      - key: ALLOWED_ORIGINS
+        value: https://crm-ath-plasticos.vercel.app
+      - key: ALEGRA_EMAIL
+        sync: false
+      - key: ALEGRA_TOKEN
+        sync: false
