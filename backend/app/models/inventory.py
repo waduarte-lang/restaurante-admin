@@ -14,6 +14,7 @@ class Ingredient(Base):
     stock_minimo = Column(Float, default=0.0)
     costo_unitario = Column(Float, default=0.0)
     proveedor = Column(String(150))
+    categoria = Column(String(60), default='Otros')
     recetas = relationship("Recipe", back_populates="ingrediente")
     movimientos = relationship("StockMovement", back_populates="ingrediente")
 
@@ -25,6 +26,7 @@ class Recipe(Base):
     item_id = Column(Integer, ForeignKey("menu_items.id"), nullable=False)
     ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False)
     cantidad = Column(Float, nullable=False)
+    unidad = Column(String(20), nullable=True)   # si es NULL se usa la del ingrediente
 
     item = relationship("MenuItem", back_populates="recetas")
     ingrediente = relationship("Ingredient", back_populates="recetas")

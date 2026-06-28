@@ -8,6 +8,8 @@ class ExpenseCreate(BaseModel):
     monto: float
     categoria: str = "general"
     fecha: date
+    metodo_pago: str = "efectivo"    # efectivo | tarjeta | transferencia
+    caja_id: Optional[int] = None
 
 
 class ExpenseUpdate(BaseModel):
@@ -15,6 +17,7 @@ class ExpenseUpdate(BaseModel):
     monto: Optional[float] = None
     categoria: Optional[str] = None
     fecha: Optional[date] = None
+    metodo_pago: Optional[str] = None
 
 
 class ExpenseOut(BaseModel):
@@ -23,6 +26,8 @@ class ExpenseOut(BaseModel):
     monto: float
     categoria: str
     fecha: date
+    metodo_pago: str = "efectivo"
+    caja_id: Optional[int] = None
     created_at: datetime
 
     class Config:

@@ -21,5 +21,7 @@ class MenuItem(Base):
     precio = Column(Float, nullable=False)
     categoria_id = Column(Integer, ForeignKey("menu_categories.id"))
     activo = Column(Boolean, default=True)
+    tipo_plato = Column(String(20), nullable=True)   # sopa | proteina | ensalada | acompanante | bebida | postre | otro
+    imagen_url = Column(String(500), nullable=True)
     categoria = relationship("MenuCategory", back_populates="items")
     recetas = relationship("Recipe", back_populates="item")

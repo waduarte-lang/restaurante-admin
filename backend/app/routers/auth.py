@@ -12,11 +12,11 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/login", response_model=TokenResponse)
 def login(data: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == data.email, User.activo == True).first()
+    user = db.query(User).filter(User.username == data.username, User.activo == True).first()
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales incorrectas")
     token = create_access_token({"sub": str(user.id), "rol": user.rol})
-    return {"access_token": token, "user": {"id": user.id, "nombre": user.nombre, "email": user.email, "rol": user.rol}}
+    return {"access_token": token, "user": {"id": user.id, "nombre": user.nombre, "username": user.username, "rol": user.rol}}
 
 
 @router.get("/me", response_model=UserOut)
@@ -31,9 +31,9 @@ def list_users(db: Session = Depends(get_db), _=Depends(admin_only)):
 
 @router.post("/users", response_model=UserOut)
 def create_user(data: UserCreate, db: Session = Depends(get_db), _=Depends(admin_only)):
-    if db.query(User).filter(User.email == data.email).first():
-        raise HTTPException(status_code=400, detail="Email ya registrado")
-    user = User(nombre=data.nombre, email=data.email, password_hash=hash_password(data.password), rol=data.rol)
+    if db.query(User).filter(User.username == data.username).first():
+        raise HTTPException(status_code=400, detail="Usuario ya registrado")
+    user = User(nombre=data.nombre, username=data.username, password_hash=hash_password(data.password), rol=data.rol)
     db.add(user)
     db.commit()
     db.refresh(user)

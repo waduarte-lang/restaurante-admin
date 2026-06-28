@@ -20,7 +20,7 @@ class TableOut(BaseModel):
     numero: int
     capacidad: int
     estado: str
-    zona: str
+    zona: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -70,3 +70,17 @@ def delete_item(item_id: int, db: Session = Depends(get_db), _=Depends(admin_onl
     item.activo = False
     db.commit()
     return {"ok": True}
+
+
+@router.post("/items/uppercase-all")
+def uppercase_all_items(db: Session = Depends(get_db), _=Depends(admin_only)):
+    """Convierte todos los nombres de platos a mayúsculas."""
+    items = db.query(MenuItem).all()
+    count = 0
+    for item in items:
+        nuevo = item.nombre.upper()
+        if nuevo != item.nombre:
+            item.nombre = nuevo
+            count += 1
+    db.commit()
+    return {"ok": True, "actualizados": count}
