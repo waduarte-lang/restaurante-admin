@@ -154,160 +154,200 @@ def _fmt_cop(v: float) -> str:
     return f"${v:,.0f}".replace(",", ".")
 
 
+_MESES_ES = {
+    1:"enero",2:"febrero",3:"marzo",4:"abril",5:"mayo",6:"junio",
+    7:"julio",8:"agosto",9:"septiembre",10:"octubre",11:"noviembre",12:"diciembre"
+}
+
+def _fecha_es(d: date) -> str:
+    return f"{d.day} de {_MESES_ES[d.month]} de {d.year}"
+
+
 def _generar_pdf(facturas: list[CarteraFactura], titulo_extra: str = "") -> io.BytesIO:
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import cm
-    from reportlab.platypus import (
-        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-    )
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
-        buf,
-        pagesize=landscape(A4),
-        leftMargin=1.5 * cm,
-        rightMargin=1.5 * cm,
-        topMargin=1.5 * cm,
-        bottomMargin=1.5 * cm,
+        buf, pagesize=landscape(A4),
+        leftMargin=1.2*cm, rightMargin=1.2*cm,
+        topMargin=1.2*cm, bottomMargin=1.2*cm,
     )
 
-    styles = getSampleStyleSheet()
-    azul = colors.HexColor("#1D4ED8")
-    azul_claro = colors.HexColor("#EFF6FF")
-    gris = colors.HexColor("#F3F4F6")
-    rojo = colors.HexColor("#DC2626")
-    naranja = colors.HexColor("#D97706")
-    amarillo = colors.HexColor("#F59E0B")
-    verde = colors.HexColor("#059669")
+    styles   = getSampleStyleSheet()
+    C_AZUL   = colors.HexColor("#1D4ED8")
+    C_AZUL_D = colors.HexColor("#1E3A8A")
+    C_GRIS   = colors.HexColor("#F3F4F6")
+    C_GRIS_L = colors.HexColor("#F9FAFB")
+    C_VERDE  = colors.HexColor("#059669")
+    C_AMAR   = colors.HexColor("#D97706")
+    C_NARA   = colors.HexColor("#EA580C")
+    C_ROJO   = colors.HexColor("#DC2626")
+    C_ROJO_D = colors.HexColor("#991B1B")
 
-    hdr_style = ParagraphStyle("hdr", parent=styles["Normal"], fontSize=18, textColor=azul,
-                                fontName="Helvetica-Bold", alignment=TA_LEFT)
-    empresa_style = ParagraphStyle("empresa", parent=styles["Normal"], fontSize=10, textColor=colors.HexColor("#1E3A8A"),
-                                fontName="Helvetica-Bold", alignment=TA_LEFT, spaceBefore=2)
-    sub_style = ParagraphStyle("sub", parent=styles["Normal"], fontSize=8, textColor=colors.grey,
-                                fontName="Helvetica", alignment=TA_LEFT, spaceBefore=1)
-    cell_style = ParagraphStyle("cell", parent=styles["Normal"], fontSize=7, fontName="Helvetica",
-                                leading=9, wordWrap="CJK")
+    P = lambda text, **kw: Paragraph(text, ParagraphStyle("_", parent=styles["Normal"], **kw))
+
+    cell = ParagraphStyle("cell", parent=styles["Normal"],
+                          fontSize=7, fontName="Helvetica", leading=8.5, wordWrap="CJK")
+    cell_bold = ParagraphStyle("cellb", parent=styles["Normal"],
+                               fontSize=7, fontName="Helvetica-Bold", leading=8.5, wordWrap="CJK")
 
     hoy = date.today()
 
-    # Agrupar por cliente
+    story = []
+    story.append(P("REPORTE DE CARTERA",
+                   fontSize=16, textColor=C_AZUL, fontName="Helvetica-Bold", alignment=TA_LEFT))
+    story.append(P("INDUSTRIAS PLÁSTICAS ATH S.A.S  ·  NIT 900.525.204-4",
+                   fontSize=9, textColor=C_AZUL_D, fontName="Helvetica-Bold", spaceBefore=2))
+    if titulo_extra:
+        story.append(P(titulo_extra,
+                       fontSize=8, textColor=C_AZUL_D, fontName="Helvetica-Bold", spaceBefore=2))
+    story.append(P(f"Corte: {_fecha_es(hoy)}",
+                   fontSize=7.5, textColor=colors.grey, spaceBefore=1))
+    story.append(Spacer(1, 0.35*cm))
+
+    # ── columnas ──────────────────────────────────────────────────────────────
+    # Cliente/Factura | NIT | F.Emis | F.Venc | Vigente | 1-30 | 31-60 | 61-90 | >90 | Total
+    COLS   = ["Cliente / Factura", "NIT", "F. Emis.", "F. Venc.",
+              "Vigente", "1–30d", "31–60d", "61–90d", ">90d", "Total"]
+    WIDTHS = [5.2*cm, 2.6*cm, 1.9*cm, 1.9*cm,
+              2.2*cm, 2.2*cm, 2.2*cm, 2.2*cm, 2.2*cm, 2.3*cm]
+    # Total ≈ 24.9cm → cabe en 29.7 - 2*1.2 = 27.3cm ✓
+
+    # colores de cada columna de aging (índice 4-8 + header)
+    AGE_COLS = {
+        "vigente":  (4, C_VERDE,  colors.HexColor("#D1FAE5")),
+        "d30":      (5, C_AMAR,   colors.HexColor("#FEF3C7")),
+        "d60":      (6, C_NARA,   colors.HexColor("#FFEDD5")),
+        "d90":      (7, C_ROJO,   colors.HexColor("#FEE2E2")),
+        "d90_mas":  (8, C_ROJO_D, colors.HexColor("#FCA5A5")),
+    }
+
     from collections import defaultdict
     clientes: dict = defaultdict(list)
     for f in facturas:
         clientes[f.nit].append(f)
 
-    story = []
-    story.append(Paragraph("REPORTE DE CARTERA", hdr_style))
-    story.append(Paragraph("INDUSTRIAS PLÁSTICAS ATH S.A.S  ·  NIT 900.525.204-4", empresa_style))
-    if titulo_extra:
-        story.append(Paragraph(titulo_extra, ParagraphStyle(
-            "cliente_hdr", parent=styles["Normal"], fontSize=9,
-            textColor=colors.HexColor("#1E3A8A"), fontName="Helvetica-Bold",
-            alignment=TA_LEFT, spaceBefore=3
-        )))
-    story.append(Paragraph(f"Corte: {hoy.strftime('%d de %B de %Y')}", sub_style))
-    story.append(Spacer(1, 0.4 * cm))
+    data  = [COLS]
+    # rastrear qué filas son "subtotal" y qué bucket tiene cada fila de detalle
+    row_types: list[str] = ["header"]   # "header" | "detail:{bucket}" | "subtotal" | "total"
 
-    # Tabla encabezado
-    COLS = ["Cliente / Factura", "NIT", "F. Emisión", "F. Vencimiento", "0–30 días", "31–60 días", "61–90 días", ">90 días", "Total"]
-    WIDTHS = [5.5*cm, 2.5*cm, 2.2*cm, 2.2*cm, 2.4*cm, 2.4*cm, 2.4*cm, 2.4*cm, 2.4*cm]
-
-    data = [COLS]
-
-    grand = {"d30": 0.0, "d60": 0.0, "d90": 0.0, "d90_mas": 0.0, "total": 0.0}
+    grand = {k: 0.0 for k in ["vigente","d30","d60","d90","d90_mas","total"]}
 
     for nit, rows in sorted(clientes.items(), key=lambda x: x[1][0].nombre_cliente):
-        cli_nombre = rows[0].nombre_cliente
-        cli_totals = {"d30": 0.0, "d60": 0.0, "d90": 0.0, "d90_mas": 0.0, "total": 0.0}
+        cli_nombre  = rows[0].nombre_cliente
+        cli_totals  = {k: 0.0 for k in ["vigente","d30","d60","d90","d90_mas","total"]}
 
-        for f in sorted(rows, key=lambda x: x.fecha_factura or date(2000, 1, 1)):
-            b = _bucket(f.fecha_vencimiento)
-            v = float(f.valor_pendiente or 0)
-            fe = f.fecha_factura.strftime("%d/%m/%Y") if f.fecha_factura else "—"
-            fv = f.fecha_vencimiento.strftime("%d/%m/%Y") if f.fecha_vencimiento else "—"
+        for f in sorted(rows, key=lambda x: x.fecha_factura or date(2000,1,1)):
+            b  = _bucket(f.fecha_vencimiento)
+            v  = float(f.valor_pendiente or 0)
+            fe = f.fecha_factura.strftime("%d/%m/%y")    if f.fecha_factura    else "—"
+            fv = f.fecha_vencimiento.strftime("%d/%m/%y") if f.fecha_vencimiento else "—"
 
             row = [
-                Paragraph(f.num_factura, cell_style),
-                Paragraph(nit, cell_style),
+                Paragraph(f.num_factura, cell),
+                Paragraph(nit, cell),
                 fe, fv,
-                _fmt_cop(v) if b == "d30" else "-",
-                _fmt_cop(v) if b == "d60" else "-",
-                _fmt_cop(v) if b == "d90" else "-",
-                _fmt_cop(v) if b == "d90_mas" else "-",
+                _fmt_cop(v) if b == "vigente"  else "—",
+                _fmt_cop(v) if b == "d30"      else "—",
+                _fmt_cop(v) if b == "d60"      else "—",
+                _fmt_cop(v) if b == "d90"      else "—",
+                _fmt_cop(v) if b == "d90_mas"  else "—",
                 _fmt_cop(v),
             ]
             data.append(row)
-            bucket_key = b if b in cli_totals else "d90_mas"
+            row_types.append(f"detail:{b}")
             if b in cli_totals:
                 cli_totals[b] += v
             cli_totals["total"] += v
 
-        # Fila subtotal cliente
-        sub_row = [
-            Paragraph(f"<b>{cli_nombre[:35]}</b>", cell_style),
-            Paragraph(f"<b>{nit}</b>", cell_style),
+        # fila subtotal cliente
+        data.append([
+            Paragraph(f"<b>{cli_nombre[:40]}</b>", cell_bold),
+            Paragraph(f"<b>{nit}</b>", cell_bold),
             "", "",
-            _fmt_cop(cli_totals["d30"]) if cli_totals["d30"] else "-",
-            _fmt_cop(cli_totals["d60"]) if cli_totals["d60"] else "-",
-            _fmt_cop(cli_totals["d90"]) if cli_totals["d90"] else "-",
-            _fmt_cop(cli_totals["d90_mas"]) if cli_totals["d90_mas"] else "-",
+            _fmt_cop(cli_totals["vigente"])  if cli_totals["vigente"]  else "—",
+            _fmt_cop(cli_totals["d30"])      if cli_totals["d30"]      else "—",
+            _fmt_cop(cli_totals["d60"])      if cli_totals["d60"]      else "—",
+            _fmt_cop(cli_totals["d90"])      if cli_totals["d90"]      else "—",
+            _fmt_cop(cli_totals["d90_mas"])  if cli_totals["d90_mas"]  else "—",
             _fmt_cop(cli_totals["total"]),
-        ]
-        data.append(sub_row)
-
+        ])
+        row_types.append("subtotal")
         for k in grand:
             grand[k] += cli_totals.get(k, 0.0)
 
-    # Fila TOTAL
+    # fila total general
     data.append([
-        Paragraph("<b>TOTAL GENERAL</b>", cell_style), "",
-        "", "",
-        _fmt_cop(grand["d30"]), _fmt_cop(grand["d60"]),
-        _fmt_cop(grand["d90"]), _fmt_cop(grand["d90_mas"]),
+        Paragraph("<b>TOTAL GENERAL</b>", cell_bold), "", "", "",
+        _fmt_cop(grand["vigente"]),
+        _fmt_cop(grand["d30"]),
+        _fmt_cop(grand["d60"]),
+        _fmt_cop(grand["d90"]),
+        _fmt_cop(grand["d90_mas"]),
         _fmt_cop(grand["total"]),
     ])
+    row_types.append("total")
 
-    tbl = Table(data, colWidths=WIDTHS, repeatRows=1)
-
-    # Identificar filas de subtotal (las que tienen texto bold cliente)
-    # Construir estilos fila por fila
+    # ── estilos base ──────────────────────────────────────────────────────────
     ts = [
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 7.5),
-        ("BACKGROUND", (0, 0), (-1, 0), azul),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("ALIGN", (0, 0), (1, -1), "LEFT"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("FONTSIZE", (0, 1), (-1, -1), 7),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, gris]),
-        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#D1D5DB")),
-        ("LINEABOVE", (0, 0), (-1, 0), 0.5, azul),
-        # Última fila TOTAL
-        ("BACKGROUND", (0, -1), (-1, -1), azul),
-        ("TEXTCOLOR", (0, -1), (-1, -1), colors.white),
-        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, -1), (-1, -1), 8),
-        ("SPAN", (0, -1), (3, -1)),
+        # header row
+        ("FONTNAME",    (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",    (0,0), (-1,0), 7.5),
+        ("BACKGROUND",  (0,0), (-1,0), C_AZUL),
+        ("TEXTCOLOR",   (0,0), (-1,0), colors.white),
+        ("ALIGN",       (0,0), (-1,-1), "CENTER"),
+        ("ALIGN",       (0,0), (1,-1),  "LEFT"),
+        ("VALIGN",      (0,0), (-1,-1), "MIDDLE"),
+        ("FONTSIZE",    (0,1), (-1,-1), 6.5),
+        ("GRID",        (0,0), (-1,-1), 0.25, colors.HexColor("#D1D5DB")),
+        ("TOPPADDING",  (0,0), (-1,-1), 2),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 2),
+        # fila total (última)
+        ("BACKGROUND",  (0,-1), (-1,-1), C_AZUL_D),
+        ("TEXTCOLOR",   (0,-1), (-1,-1), colors.white),
+        ("FONTNAME",    (0,-1), (-1,-1), "Helvetica-Bold"),
+        ("FONTSIZE",    (0,-1), (-1,-1), 7.5),
+        ("SPAN",        (0,-1), (3,-1)),
     ]
 
-    # Colorear columnas de aging en el header
-    ts.append(("BACKGROUND", (4, 0), (4, 0), verde))
-    ts.append(("BACKGROUND", (5, 0), (5, 0), amarillo))
-    ts.append(("BACKGROUND", (6, 0), (6, 0), naranja))
-    ts.append(("BACKGROUND", (7, 0), (7, 0), rojo))
+    # Colores de aging en header
+    for b_key, (col_idx, hdr_color, _) in AGE_COLS.items():
+        ts.append(("BACKGROUND", (col_idx,0), (col_idx,0), hdr_color))
 
+    # Colorear celdas individuales de aging + filas subtotal
+    for ri, rt in enumerate(row_types):
+        r = ri  # fila en la tabla (0 = header)
+        if rt.startswith("detail:"):
+            bucket = rt.split(":")[1]
+            # fondo alternado suave
+            bg = colors.white if ri % 2 == 0 else C_GRIS_L
+            ts.append(("BACKGROUND", (0,r), (-1,r), bg))
+            # resaltar la celda del bucket activo
+            if bucket in AGE_COLS:
+                col_idx, _, cell_bg = AGE_COLS[bucket]
+                ts.append(("BACKGROUND", (col_idx,r), (col_idx,r), cell_bg))
+                ts.append(("TEXTCOLOR",  (col_idx,r), (col_idx,r), AGE_COLS[bucket][1]))
+                ts.append(("FONTNAME",   (col_idx,r), (col_idx,r), "Helvetica-Bold"))
+        elif rt == "subtotal":
+            ts.append(("BACKGROUND",  (0,r), (-1,r), C_GRIS))
+            ts.append(("FONTNAME",    (0,r), (-1,r), "Helvetica-Bold"))
+            ts.append(("LINEABOVE",   (0,r), (-1,r), 0.5, C_AZUL))
+            ts.append(("LINEBELOW",   (0,r), (-1,r), 0.5, C_AZUL))
+
+    tbl = Table(data, colWidths=WIDTHS, repeatRows=1)
     tbl.setStyle(TableStyle(ts))
     story.append(tbl)
-    story.append(Spacer(1, 0.5 * cm))
-    story.append(Paragraph(
-        f"<font size='7' color='grey'>Generado el {hoy.strftime('%d/%m/%Y')} · Plasticos ATH CRM · "
-        f"{len(facturas)} facturas · {len(clientes)} clientes</font>",
-        ParagraphStyle("footer", parent=styles["Normal"], alignment=TA_CENTER)
+
+    story.append(Spacer(1, 0.4*cm))
+    story.append(P(
+        f"Generado el {hoy.strftime('%d/%m/%Y')}  ·  Plasticos ATH CRM  ·  "
+        f"{len(facturas)} factura{'s' if len(facturas)!=1 else ''}  ·  {len(clientes)} cliente{'s' if len(clientes)!=1 else ''}",
+        fontSize=6.5, textColor=colors.grey, alignment=TA_CENTER
     ))
 
     doc.build(story)
