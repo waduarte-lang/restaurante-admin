@@ -10,11 +10,33 @@ import io
 from app.database import get_db
 from app.auth.dependencies import require_roles
 from app.models.cartera import CarteraFactura
+from app.models.crm_cliente import CRMCliente
+from app.models.user import User
 
 router = APIRouter(prefix="/api/crm/cartera", tags=["crm-cartera"])
 _ROLES = ("admin", "gerente", "asesor")
 
 HOY = date.today
+
+
+def _nits_asesor(db: Session, user: User) -> list[str] | None:
+    """NITs de los clientes asignados al asesor. None = sin restricción (gerente/admin)."""
+    if user.rol != "asesor":
+        return None
+    rows = db.query(CRMCliente.nit).filter(
+        CRMCliente.asesor_id == user.id,
+        CRMCliente.nit.isnot(None),
+    ).all()
+    return [r.nit for r in rows]
+
+
+def _aplicar_filtro_asesor(query, user: User, db: Session):
+    nits = _nits_asesor(db, user)
+    if nits is None:
+        return query          # gerente/admin ve todo
+    if not nits:
+        return query.filter(False)   # asesor sin clientes → resultado vacío
+    return query.filter(CarteraFactura.nit.in_(nits))
 
 
 def _bucket(fecha_vcto: date | None) -> str:
@@ -38,9 +60,10 @@ def _bucket(fecha_vcto: date | None) -> str:
 def resumen_cartera(
     vendedor: Optional[str] = None,
     db: Session = Depends(get_db),
-    _=Depends(require_roles(*_ROLES)),
+    current_user: User = Depends(require_roles(*_ROLES)),
 ):
     q = db.query(CarteraFactura).filter(CarteraFactura.activo == True)
+    q = _aplicar_filtro_asesor(q, current_user, db)
     if vendedor:
         q = q.filter(CarteraFactura.vendedor.ilike(f"%{vendedor}%"))
     facturas = q.all()
@@ -75,9 +98,10 @@ def listar_facturas(
     page: int = 1,
     per_page: int = 500,
     db: Session = Depends(get_db),
-    _=Depends(require_roles(*_ROLES)),
+    current_user: User = Depends(require_roles(*_ROLES)),
 ):
     query = db.query(CarteraFactura).filter(CarteraFactura.activo == True)
+    query = _aplicar_filtro_asesor(query, current_user, db)
     if nit:
         clean = nit.replace(".", "").replace("-", "").strip()
         query = query.filter(
@@ -127,10 +151,12 @@ def listar_facturas(
 @router.get("/resumen-vendedores")
 def resumen_por_vendedor(
     db: Session = Depends(get_db),
-    _=Depends(require_roles(*_ROLES)),
+    current_user: User = Depends(require_roles(*_ROLES)),
 ):
     """Devuelve total de cartera pendiente agrupado por vendedor."""
-    facturas = db.query(CarteraFactura).filter(CarteraFactura.activo == True).all()
+    query = db.query(CarteraFactura).filter(CarteraFactura.activo == True)
+    query = _aplicar_filtro_asesor(query, current_user, db)
+    facturas = query.all()
     resultado: dict[str, dict] = {}
     for f in facturas:
         v = (f.vendedor or "Sin vendedor").upper().strip()
@@ -362,9 +388,10 @@ def pdf_cartera(
     q: Optional[str] = None,
     bucket: Optional[str] = None,
     db: Session = Depends(get_db),
-    _=Depends(require_roles(*_ROLES)),
+    current_user: User = Depends(require_roles(*_ROLES)),
 ):
     query = db.query(CarteraFactura).filter(CarteraFactura.activo == True)
+    query = _aplicar_filtro_asesor(query, current_user, db)
     if nit:
         query = query.filter(CarteraFactura.nit == nit)
     if vendedor:
