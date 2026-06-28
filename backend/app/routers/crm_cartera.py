@@ -203,6 +203,12 @@ def _generar_pdf(facturas: list[CarteraFactura], titulo_extra: str = "") -> io.B
     story = []
     story.append(Paragraph("REPORTE DE CARTERA", hdr_style))
     story.append(Paragraph("INDUSTRIAS PLÁSTICAS ATH S.A.S  ·  NIT 900.525.204-4", empresa_style))
+    if titulo_extra:
+        story.append(Paragraph(titulo_extra, ParagraphStyle(
+            "cliente_hdr", parent=styles["Normal"], fontSize=9,
+            textColor=colors.HexColor("#1E3A8A"), fontName="Helvetica-Bold",
+            alignment=TA_LEFT, spaceBefore=3
+        )))
     story.append(Paragraph(f"Corte: {hoy.strftime('%d de %B de %Y')}", sub_style))
     story.append(Spacer(1, 0.4 * cm))
 
@@ -336,12 +342,14 @@ def pdf_cartera(
         facturas = [f for f in facturas if _bucket(f.fecha_vencimiento) == bucket]
 
     partes = []
+    if nit and facturas:
+        partes.append(f"Cliente: {facturas[0].nombre_cliente}  ·  NIT {facturas[0].nit}")
     if vendedor: partes.append(f"Asesor: {vendedor}")
     if q: partes.append(f'Búsqueda: "{q}"')
     if bucket:
         etiquetas = {"vigente": "Vigente", "d30": "0–30 días", "d60": "31–60 días", "d90": "61–90 días", "d90_mas": ">90 días"}
         partes.append(etiquetas.get(bucket, bucket))
-    titulo = " · ".join(partes) if partes else "Cartera Completa"
+    titulo = " · ".join(partes) if partes else ""
     buf = _generar_pdf(facturas, titulo)
 
     return StreamingResponse(
