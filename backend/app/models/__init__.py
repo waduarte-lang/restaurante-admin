@@ -22,3 +22,4 @@ from .tarea import Tarea
 from .cartera import CarteraFactura
 from .alegra_factura import AlegraFactura
 from .alegra_pago import AlegraPago
+from .lista_precio import ListaPrecioProducto, Cotizacion, CotizacionItem

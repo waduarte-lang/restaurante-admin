@@ -41,7 +41,7 @@ async def lifespan(app):
 from app.database import Base, engine
 import app.models  # ensure all models are registered
 from app.routers import auth, tables, menu, orders, inventory, payments, reports, expenses, daily_menu, menu_ciclo, cash_count, domiciliarios, clientes, credito, printer, public, trazabilidad, produccion, otros
-from app.routers import crm_clientes, crm_visitas, crm_calendario, crm_pedidos, crm_cuentas, crm_tareas, crm_gerencia, crm_cartera, crm_alegra
+from app.routers import crm_clientes, crm_visitas, crm_calendario, crm_pedidos, crm_cuentas, crm_tareas, crm_gerencia, crm_cartera, crm_alegra, crm_precios
 
 Base.metadata.create_all(bind=engine)
 
@@ -67,6 +67,12 @@ with engine.connect() as _conn:
         "ALTER TABLE orders ADD COLUMN stock_descontado INTEGER DEFAULT 0",
         "ALTER TABLE crm_clientes ADD COLUMN datha_customer_id INTEGER",
         "ALTER TABLE order_items ADD COLUMN es_adicional INTEGER DEFAULT 0",
+        "CREATE TABLE IF NOT EXISTS lista_precio_productos (id INTEGER PRIMARY KEY, codigo VARCHAR(60), descripcion VARCHAR(400) NOT NULL, precio_unitario NUMERIC(18,2) NOT NULL, unidad VARCHAR(30) DEFAULT 'UND', categoria VARCHAR(100), activo INTEGER DEFAULT 1, updated_at DATETIME)",
+        "CREATE INDEX IF NOT EXISTS ix_lista_precio_productos_codigo ON lista_precio_productos(codigo)",
+        "CREATE INDEX IF NOT EXISTS ix_lista_precio_productos_categoria ON lista_precio_productos(categoria)",
+        "CREATE TABLE IF NOT EXISTS cotizaciones (id INTEGER PRIMARY KEY, consecutivo VARCHAR(25) UNIQUE NOT NULL, asesor_id INTEGER NOT NULL REFERENCES users(id), cliente_nombre VARCHAR(200), cliente_nit VARCHAR(30), cliente_email VARCHAR(200), cliente_telefono VARCHAR(30), cliente_ciudad VARCHAR(100), notas TEXT, subtotal NUMERIC(18,2) DEFAULT 0, iva_pct NUMERIC(5,2) DEFAULT 0, iva NUMERIC(18,2) DEFAULT 0, total NUMERIC(18,2) DEFAULT 0, estado VARCHAR(20) DEFAULT 'borrador', created_at DATETIME DEFAULT (datetime('now')))",
+        "CREATE INDEX IF NOT EXISTS ix_cotizaciones_consecutivo ON cotizaciones(consecutivo)",
+        "CREATE TABLE IF NOT EXISTS cotizacion_items (id INTEGER PRIMARY KEY, cotizacion_id INTEGER NOT NULL REFERENCES cotizaciones(id) ON DELETE CASCADE, codigo VARCHAR(60), descripcion VARCHAR(400), unidad VARCHAR(30) DEFAULT 'UND', cantidad NUMERIC(10,2) DEFAULT 1, precio_unitario NUMERIC(18,2) DEFAULT 0, total NUMERIC(18,2) DEFAULT 0)",
     ]:
         try:
             _conn.execute(text(_sql))
@@ -117,6 +123,7 @@ app.include_router(crm_tareas.router)
 app.include_router(crm_gerencia.router)
 app.include_router(crm_cartera.router)
 app.include_router(crm_alegra.router)
+app.include_router(crm_precios.router)
 
 
 @app.get("/")
