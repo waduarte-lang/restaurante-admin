@@ -73,15 +73,16 @@ with engine.connect() as _conn:
         "CREATE TABLE IF NOT EXISTS cotizaciones (id INTEGER PRIMARY KEY, consecutivo VARCHAR(25) UNIQUE NOT NULL, asesor_id INTEGER NOT NULL REFERENCES users(id), cliente_nombre VARCHAR(200), cliente_nit VARCHAR(30), cliente_email VARCHAR(200), cliente_telefono VARCHAR(30), cliente_ciudad VARCHAR(100), notas TEXT, subtotal NUMERIC(18,2) DEFAULT 0, iva_pct NUMERIC(5,2) DEFAULT 0, iva NUMERIC(18,2) DEFAULT 0, total NUMERIC(18,2) DEFAULT 0, estado VARCHAR(20) DEFAULT 'borrador', created_at DATETIME DEFAULT (datetime('now')))",
         "CREATE INDEX IF NOT EXISTS ix_cotizaciones_consecutivo ON cotizaciones(consecutivo)",
         "CREATE TABLE IF NOT EXISTS cotizacion_items (id INTEGER PRIMARY KEY, cotizacion_id INTEGER NOT NULL REFERENCES cotizaciones(id) ON DELETE CASCADE, codigo VARCHAR(60), descripcion VARCHAR(400), unidad VARCHAR(30) DEFAULT 'UND', cantidad NUMERIC(10,2) DEFAULT 1, precio_unitario NUMERIC(18,2) DEFAULT 0, total NUMERIC(18,2) DEFAULT 0)",
-        "ALTER TABLE lista_precio_productos ADD COLUMN precio_2 NUMERIC(18,2)",
-        "ALTER TABLE lista_precio_productos ADD COLUMN precio_3 NUMERIC(18,2)",
-        "CREATE TABLE IF NOT EXISTS lista_precio_config (id INTEGER PRIMARY KEY, label_1 VARCHAR(80), label_2 VARCHAR(80), label_3 VARCHAR(80), updated_at DATETIME)",
+        "ALTER TABLE lista_precio_productos ADD COLUMN IF NOT EXISTS precio_2 NUMERIC(18,2)",
+        "ALTER TABLE lista_precio_productos ADD COLUMN IF NOT EXISTS precio_3 NUMERIC(18,2)",
+        "CREATE TABLE IF NOT EXISTS lista_precio_config (id INTEGER PRIMARY KEY, label_1 VARCHAR(80), label_2 VARCHAR(80), label_3 VARCHAR(80), updated_at TIMESTAMP)",
     ]:
         try:
             _conn.execute(text(_sql))
             _conn.commit()
         except Exception:
-            pass  # columna ya existe
+            try: _conn.rollback()
+            except Exception: pass
 
 app = FastAPI(title="Sistema Administrativo API", version="1.0.0", lifespan=lifespan)
 
