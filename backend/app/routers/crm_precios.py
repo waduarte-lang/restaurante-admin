@@ -264,17 +264,11 @@ def upload_lista_precios(
     """Reemplaza la lista de precios completa desde un archivo CSV."""
     import re, unicodedata
 
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Se requiere un archivo CSV")
+    fname = (file.filename or "").lower()
+    if not (fname.endswith(".csv") or fname.endswith(".xlsx") or fname.endswith(".xls")):
+        raise HTTPException(status_code=400, detail="Se requiere un archivo CSV o Excel (.xlsx)")
 
     content = file.file.read()
-    text = ""
-    for enc in ("utf-8-sig", "utf-8", "latin-1"):
-        try:
-            text = content.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
 
     def _norm(s: str) -> str:
         return "".join(
@@ -282,10 +276,32 @@ def upload_lista_precios(
             if unicodedata.category(c) != "Mn"
         )
 
-    reader = csv.DictReader(io.StringIO(text))
-    raw_headers = list(reader.fieldnames or [])
-    if not raw_headers:
-        raise HTTPException(status_code=400, detail="CSV sin encabezados")
+    # ── Leer filas según formato ───────────────────────────────────────────────
+    if fname.endswith(".csv"):
+        text = ""
+        for enc in ("utf-8-sig", "utf-8", "latin-1"):
+            try:
+                text = content.decode(enc); break
+            except UnicodeDecodeError:
+                continue
+        reader = csv.DictReader(io.StringIO(text))
+        raw_headers = list(reader.fieldnames or [])
+        if not raw_headers:
+            raise HTTPException(status_code=400, detail="CSV sin encabezados")
+        rows_raw = list(reader)
+    else:
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+        ws = wb.active
+        all_rows = list(ws.iter_rows(values_only=True))
+        if not all_rows:
+            raise HTTPException(status_code=400, detail="Excel vacío")
+        raw_headers = [str(h or "").strip() for h in all_rows[0]]
+        rows_raw = [
+            dict(zip(raw_headers, [str(c or "").strip() for c in row]))
+            for row in all_rows[1:]
+            if any(c for c in row)
+        ]
 
     norm_headers = [_norm(h) for h in raw_headers]
 
@@ -341,9 +357,8 @@ def upload_lista_precios(
         prefix = codigo.split("-")[0].upper()
         return {"PEAD": "Envases PEAD", "PET": "Envases PET", "INY": "Inyección / Tapas"}.get(prefix, prefix or "General")
 
-    rows_raw = list(reader)
     if not rows_raw:
-        raise HTTPException(status_code=400, detail="CSV vacío o sin filas de datos")
+        raise HTTPException(status_code=400, detail="Archivo vacío o sin filas de datos")
 
     productos: list[ListaPrecioProducto] = []
     errores = 0
