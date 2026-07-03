@@ -7,14 +7,27 @@ from app.database import Base
 class ListaPrecioProducto(Base):
     __tablename__ = "lista_precio_productos"
 
-    id            = Column(Integer, primary_key=True, index=True)
-    codigo        = Column(String(60), index=True)
-    descripcion   = Column(String(400), nullable=False)
-    precio_unitario = Column(Numeric(18, 2), nullable=False)
-    unidad        = Column(String(30), default="UND")
-    categoria     = Column(String(100), index=True)
-    activo        = Column(Boolean, default=True)
-    updated_at    = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    id              = Column(Integer, primary_key=True, index=True)
+    codigo          = Column(String(60), index=True)
+    descripcion     = Column(String(400), nullable=False)
+    precio_unitario = Column(Numeric(18, 2), nullable=False)   # tier 1
+    precio_2        = Column(Numeric(18, 2), nullable=True)    # tier 2
+    precio_3        = Column(Numeric(18, 2), nullable=True)    # tier 3
+    unidad          = Column(String(30), default="UND")
+    categoria       = Column(String(100), index=True)
+    activo          = Column(Boolean, default=True)
+    updated_at      = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ListaPrecioConfig(Base):
+    """Una sola fila: etiquetas de los 3 rangos de precio del CSV."""
+    __tablename__ = "lista_precio_config"
+
+    id         = Column(Integer, primary_key=True)
+    label_1    = Column(String(80), nullable=True)
+    label_2    = Column(String(80), nullable=True)
+    label_3    = Column(String(80), nullable=True)
+    updated_at = Column(DateTime, nullable=True)
 
 
 class Cotizacion(Base):

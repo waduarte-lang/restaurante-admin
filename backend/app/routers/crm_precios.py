@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_roles
 from app.database import get_db
-from app.models.lista_precio import Cotizacion, CotizacionItem, ListaPrecioProducto
+from app.models.lista_precio import Cotizacion, CotizacionItem, ListaPrecioConfig, ListaPrecioProducto
 from app.models.user import User
 
 router = APIRouter(tags=["crm-precios"])
@@ -262,12 +262,13 @@ def upload_lista_precios(
     user: User = Depends(require_roles("admin", "gerente")),
 ):
     """Reemplaza la lista de precios completa desde un archivo CSV."""
-    import unicodedata
+    import re, unicodedata
 
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Se requiere un archivo CSV")
 
     content = file.file.read()
+    text = ""
     for enc in ("utf-8-sig", "utf-8", "latin-1"):
         try:
             text = content.decode(enc)
@@ -276,7 +277,6 @@ def upload_lista_precios(
             continue
 
     def _norm(s: str) -> str:
-        """Minúsculas sin tildes para comparación flexible."""
         return "".join(
             c for c in unicodedata.normalize("NFD", s.lower().strip())
             if unicodedata.category(c) != "Mn"
@@ -290,29 +290,50 @@ def upload_lista_precios(
     norm_headers = [_norm(h) for h in raw_headers]
 
     def _find_col(row: dict, *keywords: str) -> str:
-        """Busca el primer header que contenga alguna de las palabras clave (sin tildes)."""
         for kw in keywords:
             for raw_h, norm_h in zip(raw_headers, norm_headers):
                 if kw in norm_h:
                     return str(row.get(raw_h, "") or "").strip()
         return ""
 
-    def _find_price_col(row: dict) -> str:
-        """Detecta columna de precio: primero por nombre estándar, luego por patrón 'P. …'."""
-        # Nombres estándar
-        val = _find_col(row, "precio", "price", "valor", "unitario")
-        if val:
-            return val
-        # Patrón ATH: columnas que empiezan con "p. " (ej. "P. 3K-20K")
-        for raw_h, norm_h in zip(raw_headers, norm_headers):
-            if norm_h.startswith("p. ") or norm_h.startswith("p."):
-                v = str(row.get(raw_h, "") or "").strip()
-                if v:
-                    return v
-        return ""
+    # Detecta columnas de precio: primero patrón "P. ..." (ATH), luego nombres estándar
+    price_cols: list[tuple[str, str]] = []  # (raw_header, label)
+    for raw_h, norm_h in zip(raw_headers, norm_headers):
+        if norm_h.startswith("p. ") or (norm_h.startswith("p.") and len(norm_h) > 2 and norm_h[2] not in ("r", "e")):
+            label = re.sub(r"^[Pp]\.\s*", "", raw_h).strip()
+            price_cols.append((raw_h, label))
+
+    if not price_cols:
+        for kw in ("precio", "price", "valor", "unitario"):
+            for raw_h, norm_h in zip(raw_headers, norm_headers):
+                if kw in norm_h:
+                    price_cols.append((raw_h, "Precio"))
+                    break
+            if price_cols:
+                break
+
+    def _parse_price(val: str) -> Optional[float]:
+        s = val.replace("$", "").replace("\xa0", "").strip()
+        if not s:
+            return None
+        if "," in s and "." in s:
+            s = s.replace(".", "").replace(",", ".")
+        elif "," in s:
+            s = s.replace(",", ".")
+        else:
+            s = s.replace(".", "")
+        try:
+            v = float(s)
+            return v if v > 0 else None
+        except ValueError:
+            return None
+
+    def _get_price(row: dict, idx: int) -> Optional[float]:
+        if idx >= len(price_cols):
+            return None
+        return _parse_price(str(row.get(price_cols[idx][0], "") or "").strip())
 
     def _categoria_from_codigo(codigo: str, fallback: str) -> str:
-        """Deriva categoría del prefijo del código: PEAD/PET/INY."""
         if fallback:
             return fallback
         if not codigo:
@@ -328,37 +349,25 @@ def upload_lista_precios(
     errores = 0
     for row in rows_raw:
         desc      = _find_col(row, "producto", "descripcion", "description", "nombre", "articulo")
-        precio_raw = _find_price_col(row)
         codigo    = _find_col(row, "codigo", "code", "ref", "referencia")
         unidad    = _find_col(row, "unidad", "unit", "und", "medida") or "UND"
         cat_raw   = _find_col(row, "categoria", "category", "linea", "grupo")
         categoria = _categoria_from_codigo(codigo, cat_raw)
 
-        if not desc or not precio_raw:
-            errores += 1
-            continue
+        p1 = _get_price(row, 0)
+        p2 = _get_price(row, 1)
+        p3 = _get_price(row, 2)
 
-        precio_str = precio_raw.replace("$", "").replace("\xa0", "").strip()
-        # Formato colombiano: separador miles = punto, decimal = coma
-        if "," in precio_str and "." in precio_str:
-            precio_str = precio_str.replace(".", "").replace(",", ".")
-        elif "," in precio_str:
-            precio_str = precio_str.replace(",", ".")
-        else:
-            precio_str = precio_str.replace(".", "")
-
-        try:
-            precio = float(precio_str)
-            if precio <= 0:
-                raise ValueError
-        except ValueError:
+        if not desc or not p1:
             errores += 1
             continue
 
         productos.append(ListaPrecioProducto(
             codigo          = codigo or None,
             descripcion     = desc,
-            precio_unitario = Decimal(str(precio)),
+            precio_unitario = Decimal(str(p1)),
+            precio_2        = Decimal(str(p2)) if p2 else None,
+            precio_3        = Decimal(str(p3)) if p3 else None,
             unidad          = unidad,
             categoria       = categoria,
             activo          = True,
@@ -366,16 +375,34 @@ def upload_lista_precios(
         ))
 
     if not productos:
-        raise HTTPException(status_code=400, detail=f"No se encontraron productos válidos. Columnas detectadas: {raw_headers}. Errores: {errores}")
+        raise HTTPException(status_code=400, detail=f"No se encontraron productos válidos. Columnas: {raw_headers}. Errores: {errores}")
 
     db.query(ListaPrecioProducto).delete()
     db.bulk_save_objects(productos)
+
+    # Guardar etiquetas de los rangos de precio
+    labels = [pc[1] for pc in price_cols[:3]]
+    cfg = db.query(ListaPrecioConfig).first()
+    if cfg:
+        cfg.label_1 = labels[0] if len(labels) > 0 else None
+        cfg.label_2 = labels[1] if len(labels) > 1 else None
+        cfg.label_3 = labels[2] if len(labels) > 2 else None
+        cfg.updated_at = datetime.now()
+    else:
+        db.add(ListaPrecioConfig(
+            label_1    = labels[0] if len(labels) > 0 else None,
+            label_2    = labels[1] if len(labels) > 1 else None,
+            label_3    = labels[2] if len(labels) > 2 else None,
+            updated_at = datetime.now(),
+        ))
+
     db.commit()
 
     return {
         "ok":       True,
         "cargados": len(productos),
         "errores":  errores,
+        "labels":   labels,
         "mensaje":  f"Lista actualizada: {len(productos)} productos cargados",
     }
 
@@ -415,16 +442,27 @@ def search_productos(
         qr = qr.filter(ListaPrecioProducto.categoria == categoria)
     total = qr.count()
     items = qr.order_by(ListaPrecioProducto.descripcion).offset(skip).limit(limit).all()
+
+    cfg = db.query(ListaPrecioConfig).first()
+    labels = {
+        "label_1": cfg.label_1 if cfg else None,
+        "label_2": cfg.label_2 if cfg else None,
+        "label_3": cfg.label_3 if cfg else None,
+    }
+
     return {
-        "total": total,
+        "total":  total,
+        "labels": labels,
         "items": [
             {
-                "id":               p.id,
-                "codigo":           p.codigo,
-                "descripcion":      p.descripcion,
-                "precio_unitario":  float(p.precio_unitario),
-                "unidad":           p.unidad,
-                "categoria":        p.categoria,
+                "id":              p.id,
+                "codigo":          p.codigo,
+                "descripcion":     p.descripcion,
+                "precio_unitario": float(p.precio_unitario),
+                "precio_2":        float(p.precio_2) if p.precio_2 else None,
+                "precio_3":        float(p.precio_3) if p.precio_3 else None,
+                "unidad":          p.unidad,
+                "categoria":       p.categoria,
             }
             for p in items
         ],
