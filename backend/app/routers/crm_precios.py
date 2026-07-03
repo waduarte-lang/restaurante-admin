@@ -443,12 +443,23 @@ def search_productos(
     total = qr.count()
     items = qr.order_by(ListaPrecioProducto.descripcion).offset(skip).limit(limit).all()
 
-    cfg = db.query(ListaPrecioConfig).first()
-    labels = {
-        "label_1": cfg.label_1 if cfg else None,
-        "label_2": cfg.label_2 if cfg else None,
-        "label_3": cfg.label_3 if cfg else None,
-    }
+    try:
+        cfg = db.query(ListaPrecioConfig).first()
+        labels = {
+            "label_1": cfg.label_1 if cfg else None,
+            "label_2": cfg.label_2 if cfg else None,
+            "label_3": cfg.label_3 if cfg else None,
+        }
+    except Exception:
+        labels = {"label_1": None, "label_2": None, "label_3": None}
+
+    def _p2(p):
+        try: return float(p.precio_2) if p.precio_2 else None
+        except Exception: return None
+
+    def _p3(p):
+        try: return float(p.precio_3) if p.precio_3 else None
+        except Exception: return None
 
     return {
         "total":  total,
@@ -459,8 +470,8 @@ def search_productos(
                 "codigo":          p.codigo,
                 "descripcion":     p.descripcion,
                 "precio_unitario": float(p.precio_unitario),
-                "precio_2":        float(p.precio_2) if p.precio_2 else None,
-                "precio_3":        float(p.precio_3) if p.precio_3 else None,
+                "precio_2":        _p2(p),
+                "precio_3":        _p3(p),
                 "unidad":          p.unidad,
                 "categoria":       p.categoria,
             }
