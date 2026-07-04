@@ -302,6 +302,9 @@ def asignar_asesor_a_cliente(
         if a:
             asesor_out = {"id": a.id, "nombre": a.nombre}
 
+    from app.services.vendedor_sync import propagar_vendedor_por_nit
+    propagar_vendedor_por_nit(db, crm.nit, asesor_out["nombre"] if asesor_out else None)
+
     return {"crm_id": crm.id, "nombre": crm.nombre, "asesor": asesor_out}
 
 

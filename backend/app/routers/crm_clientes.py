@@ -80,8 +80,21 @@ def actualizar_cliente(
         raise HTTPException(404, "Cliente no encontrado")
     if current_user.rol == "asesor" and c.asesor_id != current_user.id:
         raise HTTPException(403, "Acceso denegado")
-    for field, value in data.model_dump(exclude_unset=True).items():
+
+    update_data = data.model_dump(exclude_unset=True)
+    asesor_cambio = "asesor_id" in update_data and update_data["asesor_id"] != c.asesor_id
+
+    for field, value in update_data.items():
         setattr(c, field, value)
     db.commit()
     db.refresh(c)
+
+    if asesor_cambio:
+        nuevo_nombre = None
+        if c.asesor_id:
+            a = db.query(User).filter(User.id == c.asesor_id).first()
+            nuevo_nombre = a.nombre if a else None
+        from app.services.vendedor_sync import propagar_vendedor_por_nit
+        propagar_vendedor_por_nit(db, c.nit, nuevo_nombre)
+
     return _enrich(c)
