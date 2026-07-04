@@ -372,7 +372,7 @@ def ordenes_produccion(
         params["estado"] = estado
 
     if q:
-        filters.append('(c."businessName" ILIKE :q OR p.name ILIKE :q OR po.order_number ILIKE :q)')
+        filters.append('(COALESCE(c."businessName", \'\') ILIKE :q OR COALESCE(p.name, \'\') ILIKE :q OR COALESCE(po.order_number, \'\') ILIKE :q)')
         params["q"] = f"%{q}%"
 
     where = " AND ".join(filters)
