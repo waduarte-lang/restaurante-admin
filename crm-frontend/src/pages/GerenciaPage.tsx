@@ -67,6 +67,7 @@ const ETAPAS_KANBAN = [
 ]
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
+  pendiente:  { label: 'Pendiente',   color: 'bg-purple-100 text-purple-800', dot: 'bg-purple-500' },
   en_proceso: { label: 'En Proceso',  color: 'bg-blue-100 text-blue-800',     dot: 'bg-blue-500'   },
   programada: { label: 'Programada',  color: 'bg-yellow-100 text-yellow-800', dot: 'bg-yellow-500' },
   pausada:    { label: 'Pausada',     color: 'bg-orange-100 text-orange-800', dot: 'bg-orange-500' },

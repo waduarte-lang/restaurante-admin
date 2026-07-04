@@ -28,7 +28,7 @@ _ALL_CRM = ("admin", "gerente", "asesor")
 ETAPAS = ["prospecto", "contactado", "visita_agendada", "propuesta", "negociacion", "cumplido"]
 
 ESTADOS_PRODUCCION = [
-    "en_proceso", "programada", "pausada", "terminada", "cancelada"
+    "pendiente", "en_proceso", "programada", "pausada", "terminada", "cancelada"
 ]
 
 # ── Serialización DATHA ───────────────────────────────────────────────────────
@@ -310,7 +310,11 @@ def ordenes_resumen(
     prod_db: Session = Depends(get_prod_db),
     current_user: User = Depends(require_roles(*_ROLES)),
 ):
-    """Resumen de órdenes de producción agrupadas por status."""
+    """Resumen de órdenes de producción agrupadas por status.
+
+    Incluye "pendiente": productos vendidos (sales_order_product) que aún
+    no tienen production_order creada, es decir, aún no han entrado a producción.
+    """
     sql = text("""
         SELECT
             po.status,
@@ -337,6 +341,23 @@ def ordenes_resumen(
     """)
     rows = _rows(prod_db.execute(sql))
 
+    pendiente_sql = text("""
+        SELECT
+            COUNT(*)             AS total,
+            SUM(sop.quantity)    AS unidades_total
+        FROM sales_order_product sop
+        WHERE sop.status = 'pendiente'
+    """)
+    pendiente_row = _row(prod_db.execute(pendiente_sql)) or {}
+    rows.insert(0, {
+        "status": "pendiente",
+        "total": pendiente_row.get("total") or 0,
+        "unidades_total": pendiente_row.get("unidades_total") or 0,
+        "unidades_producidas": 0,
+        "unidades_defectuosas": 0,
+        "avance_pct": 0,
+    })
+
     # Resumen de clientes activos con órdenes
     clientes_sql = text("""
         SELECT COUNT(DISTINCT c.id) AS total_clientes
@@ -354,6 +375,63 @@ def ordenes_resumen(
     }
 
 
+def _ordenes_pendientes(prod_db: Session, q: Optional[str], page: int, per_page: int) -> dict:
+    """Productos vendidos sin production_order (aún no entran a producción)."""
+    filters = ["sop.status = 'pendiente'"]
+    params: dict = {"limit": per_page, "offset": (page - 1) * per_page}
+
+    if q:
+        filters.append('(COALESCE(c."businessName", \'\') ILIKE :q OR COALESCE(p.name, \'\') ILIKE :q OR COALESCE(so.order_number, \'\') ILIKE :q)')
+        params["q"] = f"%{q}%"
+
+    where = " AND ".join(filters)
+
+    sql = text(f"""
+        SELECT
+            sop.id,
+            so.order_number       AS order_number,
+            'pendiente'            AS status,
+            NULL::text             AS priority,
+            sop.quantity           AS quantity_to_produce,
+            0                      AS quantity_produced,
+            0                      AS quantity_defective,
+            NULL::timestamptz      AS actual_start_date,
+            NULL::timestamptz      AS actual_end_date,
+            so.created_at          AS created_at,
+            sop.observations        AS notes,
+            p.name                 AS product_name,
+            p.sku                  AS product_sku,
+            p.color                AS product_color,
+            NULL::text             AS machine_name,
+            NULL::text             AS area_name,
+            so.order_number        AS sales_order_number,
+            COALESCE(sop.delivery_date, so.delivery_date) AS delivery_date,
+            c."businessName"       AS customer_name,
+            0                      AS avance_pct
+        FROM sales_order_product sop
+        JOIN product p ON p.id = sop.product_id
+        LEFT JOIN sales_order so ON so.id = sop.sales_order_id
+        LEFT JOIN customer c ON c.id = so.customer_id
+        WHERE {where}
+        ORDER BY so.created_at DESC NULLS LAST
+        LIMIT :limit OFFSET :offset
+    """)
+
+    count_sql = text(f"""
+        SELECT COUNT(*)
+        FROM sales_order_product sop
+        JOIN product p ON p.id = sop.product_id
+        LEFT JOIN sales_order so ON so.id = sop.sales_order_id
+        LEFT JOIN customer c ON c.id = so.customer_id
+        WHERE {where}
+    """)
+    count_params = {k: v for k, v in params.items() if k not in ("limit", "offset")}
+
+    items = _rows(prod_db.execute(sql, params))
+    total = prod_db.execute(count_sql, count_params).scalar() or 0
+    return {"items": items, "total": total, "page": page, "per_page": per_page}
+
+
 @router.get("/ordenes")
 def ordenes_produccion(
     estado: Optional[str] = None,
@@ -363,7 +441,15 @@ def ordenes_produccion(
     prod_db: Session = Depends(get_prod_db),
     current_user: User = Depends(require_roles(*_ROLES)),
 ):
-    """Lista órdenes de producción de DATHA con filtros por status y cliente."""
+    """Lista órdenes de producción de DATHA con filtros por status y cliente.
+
+    estado="pendiente" es un caso especial: no existe en production_order,
+    viene de sales_order_product.status = 'pendiente' (productos vendidos
+    que aún no han entrado a producción).
+    """
+    if estado == "pendiente":
+        return _ordenes_pendientes(prod_db, q, page, per_page)
+
     filters = ['po."isActive" = true']
     params: dict = {"limit": per_page, "offset": (page - 1) * per_page}
 
