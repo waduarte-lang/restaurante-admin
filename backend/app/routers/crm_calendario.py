@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import extract
 from app.database import get_db
 from app.auth.dependencies import require_roles
@@ -28,7 +28,7 @@ def listar_eventos(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(*_ROLES)),
 ):
-    query = db.query(CalendarioEvento)
+    query = db.query(CalendarioEvento).options(joinedload(CalendarioEvento.cliente))
     if current_user.rol == "asesor":
         query = query.filter(CalendarioEvento.asesor_id == current_user.id)
     if year:

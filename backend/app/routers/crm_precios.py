@@ -18,6 +18,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_roles
@@ -508,23 +509,36 @@ def crear_cotizacion(
     iva_val  = subtotal * (body.iva_pct / 100)
     total    = subtotal + iva_val
 
-    cot = Cotizacion(
-        consecutivo      = _next_consecutivo(db),
-        asesor_id        = user.id,
-        cliente_nombre   = body.cliente_nombre,
-        cliente_nit      = body.cliente_nit,
-        cliente_email    = body.cliente_email,
-        cliente_telefono = body.cliente_telefono,
-        cliente_ciudad   = body.cliente_ciudad,
-        notas            = body.notas,
-        subtotal         = Decimal(str(subtotal)),
-        iva_pct          = Decimal(str(body.iva_pct)),
-        iva              = Decimal(str(iva_val)),
-        total            = Decimal(str(total)),
-        created_at       = datetime.now(),
-    )
-    db.add(cot)
-    db.flush()
+    # _next_consecutivo() lee el último número sin lock, así que dos asesores
+    # creando una cotización al mismo tiempo pueden calcular el mismo valor.
+    # El constraint UNIQUE lo detecta como IntegrityError; reintentamos con
+    # un consecutivo recién calculado en vez de fallar con 500.
+    cot = None
+    max_intentos = 5
+    for intento in range(max_intentos):
+        cot = Cotizacion(
+            consecutivo      = _next_consecutivo(db),
+            asesor_id        = user.id,
+            cliente_nombre   = body.cliente_nombre,
+            cliente_nit      = body.cliente_nit,
+            cliente_email    = body.cliente_email,
+            cliente_telefono = body.cliente_telefono,
+            cliente_ciudad   = body.cliente_ciudad,
+            notas            = body.notas,
+            subtotal         = Decimal(str(subtotal)),
+            iva_pct          = Decimal(str(body.iva_pct)),
+            iva              = Decimal(str(iva_val)),
+            total            = Decimal(str(total)),
+            created_at       = datetime.now(),
+        )
+        db.add(cot)
+        try:
+            db.flush()
+            break
+        except IntegrityError:
+            db.rollback()
+            if intento == max_intentos - 1:
+                raise HTTPException(status_code=409, detail="No se pudo generar un consecutivo único, intenta de nuevo")
 
     for it in body.items:
         item_total = it.precio_unitario * it.cantidad

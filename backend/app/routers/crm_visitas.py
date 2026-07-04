@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.auth.dependencies import require_roles
 from app.models.user import User
@@ -26,7 +26,7 @@ def listar_visitas(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(*_ROLES)),
 ):
-    query = db.query(Visita)
+    query = db.query(Visita).options(joinedload(Visita.cliente), joinedload(Visita.asesor))
     if current_user.rol == "asesor":
         query = query.filter(Visita.asesor_id == current_user.id)
     if cliente_id:

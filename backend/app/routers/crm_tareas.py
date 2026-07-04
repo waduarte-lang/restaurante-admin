@@ -1,6 +1,6 @@
 import json
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from datetime import datetime, date
 
@@ -41,7 +41,7 @@ def listar_tareas(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(*_ROLES)),
 ):
-    query = db.query(Tarea)
+    query = db.query(Tarea).options(joinedload(Tarea.cliente))
     if current_user.rol == "asesor":
         query = query.filter(Tarea.asesor_id == current_user.id)
     if etapa:
@@ -62,7 +62,7 @@ def kanban_tareas(
     current_user: User = Depends(require_roles(*_ROLES)),
 ):
     """Devuelve tareas agrupadas por etapa para el tablero Kanban."""
-    query = db.query(Tarea)
+    query = db.query(Tarea).options(joinedload(Tarea.cliente))
     if current_user.rol == "asesor":
         query = query.filter(Tarea.asesor_id == current_user.id)
     tareas = query.order_by(Tarea.created_at.desc()).all()

@@ -15,6 +15,19 @@ router = APIRouter(prefix="/api/crm/alegra", tags=["crm-alegra"])
 _ROLES = ("admin", "gerente", "asesor")
 
 
+def _mes_range(mes: str) -> tuple[date, date]:
+    """Convierte 'YYYY-MM' en (inicio, fin) para filtrar por rango de fechas.
+
+    Se usa en vez de func.strftime() porque strftime es sintaxis SQLite y
+    falla contra Postgres (producción); un rango de fechas funciona igual
+    en ambos motores y además permite usar índices.
+    """
+    year, month = (int(p) for p in mes.split("-"))
+    inicio = date(year, month, 1)
+    fin = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    return inicio, fin
+
+
 def _to_dict(f: AlegraFactura) -> dict:
     hoy = date.today()
     dias_vencido = None
@@ -48,11 +61,8 @@ def resumen(
 ):
     q = db.query(AlegraFactura)
     if mes:
-        year, month = mes.split("-")
-        q = q.filter(
-            func.strftime("%Y", AlegraFactura.fecha_factura) == year,
-            func.strftime("%m", AlegraFactura.fecha_factura) == month,
-        )
+        inicio, fin = _mes_range(mes)
+        q = q.filter(AlegraFactura.fecha_factura >= inicio, AlegraFactura.fecha_factura < fin)
     facturas = q.all()
     total_facturado = sum(float(f.total or 0) for f in facturas)
     total_pendiente = sum(float(f.saldo or 0) for f in facturas)
@@ -81,11 +91,8 @@ def listar_facturas(
 ):
     query = db.query(AlegraFactura)
     if mes:
-        year, month = mes.split("-")
-        query = query.filter(
-            func.strftime("%Y", AlegraFactura.fecha_factura) == year,
-            func.strftime("%m", AlegraFactura.fecha_factura) == month,
-        )
+        inicio, fin = _mes_range(mes)
+        query = query.filter(AlegraFactura.fecha_factura >= inicio, AlegraFactura.fecha_factura < fin)
     if status:
         query = query.filter(AlegraFactura.status == status)
     if nit:
@@ -134,11 +141,8 @@ def resumen_vendedores(
 ):
     q = db.query(AlegraFactura)
     if mes:
-        year, month = mes.split("-")
-        q = q.filter(
-            func.strftime("%Y", AlegraFactura.fecha_factura) == year,
-            func.strftime("%m", AlegraFactura.fecha_factura) == month,
-        )
+        inicio, fin = _mes_range(mes)
+        q = q.filter(AlegraFactura.fecha_factura >= inicio, AlegraFactura.fecha_factura < fin)
     facturas = q.all()
     result: dict = {}
     for f in facturas:
@@ -188,11 +192,8 @@ def listar_pagos(
 ):
     query = db.query(AlegraPago)
     if mes:
-        year, month = mes.split("-")
-        query = query.filter(
-            func.strftime("%Y", AlegraPago.fecha_pago) == year,
-            func.strftime("%m", AlegraPago.fecha_pago) == month,
-        )
+        inicio, fin = _mes_range(mes)
+        query = query.filter(AlegraPago.fecha_pago >= inicio, AlegraPago.fecha_pago < fin)
     if nit:
         query = query.filter(AlegraPago.nit.ilike(f"%{nit}%"))
     if q:
@@ -240,11 +241,8 @@ def resumen_cobranzas(
 ):
     q = db.query(AlegraPago)
     if mes:
-        year, month = mes.split("-")
-        q = q.filter(
-            func.strftime("%Y", AlegraPago.fecha_pago) == year,
-            func.strftime("%m", AlegraPago.fecha_pago) == month,
-        )
+        inicio, fin = _mes_range(mes)
+        q = q.filter(AlegraPago.fecha_pago >= inicio, AlegraPago.fecha_pago < fin)
     pagos = q.all()
     total_cobrado = sum(float(p.monto or 0) for p in pagos)
     anticipos = sum(float(p.monto or 0) for p in pagos if p.es_anticipo)
